@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { attendanceCsv } from './src/attendance-csv.js';
+import { eventState } from './src/platform-rules.js';
+const csv = attendanceCsv([{ id: 'EF-0123456789', name: ' \t=HYPERLINK("bad")', email: '+formula', organization: 'One,"Two"\nThree', token: 'never-export-this' }]);
+assert.ok(csv.startsWith('\ufeff"id","name"'));
+assert.ok(csv.includes('"\' \t=HYPERLINK(""bad"")"'));
+assert.ok(csv.includes('"\'+formula"'));
+assert.ok(csv.includes('"One,""Two""\nThree"'));
+assert.ok(!csv.includes('never-export-this'));
+const event = { registrationOpen: '2026-10-06T10:00:00+05:30', registrationClose: '2026-10-06T17:00:00+05:30', capacity: 2, registered: 2 };
+assert.equal(eventState(event, Date.parse('2026-10-06T12:00:00+05:30')), 'full');
+assert.equal(eventState(event, Date.parse(event.registrationClose)), 'closed');
+assert.equal(eventState(event, Date.parse(event.registrationClose) + 900000), 'hidden');
+console.log('PASS: CSV quoting, spreadsheet formula protection and token exclusion; full events respect closing/hiding deadlines.');

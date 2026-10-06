@@ -1,0 +1,10 @@
+{
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "eventflow-qr-preview.vercel.app" }],
+      "destination": "https://eventflow-qr.vercel.app/:path*",
+      "permanent": true
+    }
+  ]
+}

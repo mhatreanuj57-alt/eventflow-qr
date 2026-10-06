@@ -1,0 +1,289 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "EventFlow QR organizer accounts, events, registration and attendance",
+  "Parameters": {
+    "ArtifactBucket": {
+      "Type": "String"
+    },
+    "ArtifactKey": {
+      "Type": "String"
+    },
+    "OrganizerSecretArn": {
+      "Type": "String"
+    },
+    "FrontendOrigin": {
+      "Type": "String",
+      "Default": "https://eventflow-qr.vercel.app"
+    }
+  },
+  "Resources": {
+    "Attendees": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": "eventflow-qr",
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "pk",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "sk",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "pk",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "sk",
+            "KeyType": "RANGE"
+          }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expiresAt",
+          "Enabled": true
+        },
+        "SSESpecification": {
+          "SSEEnabled": true
+        }
+      }
+    },
+    "Logs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/eventflow-qr",
+        "RetentionInDays": 7
+      }
+    },
+    "ExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "EventFlowOnly",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "lambda:InvokeFunction",
+                  "Resource": {"Fn::Sub": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:eventflow-qr"}
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:UpdateItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:Query",
+                    "dynamodb:TransactWriteItems",
+                    "dynamodb:ConditionCheckItem"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Attendees",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Ref": "OrganizerSecretArn"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "${Logs.Arn}:*"
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject", "s3:DeleteObject"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:s3:::${ArtifactBucket}/brands/*"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "Function": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": "Logs",
+      "Properties": {
+        "FunctionName": "eventflow-qr",
+        "Runtime": "python3.13",
+        "Handler": "handler.handler",
+        "MemorySize": 256,
+        "Timeout": 20,
+        "Role": {
+          "Fn::GetAtt": [
+            "ExecutionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ArtifactBucket"
+          },
+          "S3Key": {
+            "Ref": "ArtifactKey"
+          }
+        },
+        "Environment": {
+          "Variables": {
+            "FRONTEND_ORIGIN": {"Ref": "FrontendOrigin"},
+            "TABLE_NAME": {
+              "Ref": "Attendees"
+            },
+            "SECRET_ARN": {
+              "Ref": "OrganizerSecretArn"
+            },
+            "BRAND_BUCKET": {
+              "Ref": "ArtifactBucket"
+            }
+          }
+        }
+      }
+    },
+    "Api": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": "eventflow-qr",
+        "ProtocolType": "HTTP",
+        "CorsConfiguration": {
+          "AllowOrigins": [
+            {
+              "Ref": "FrontendOrigin"
+            }
+          ],
+          "AllowMethods": [
+            "GET",
+            "POST"
+          ],
+          "AllowHeaders": [
+            "content-type",
+            "authorization"
+          ],
+          "MaxAge": 300
+        }
+      }
+    },
+    "Integration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "Api"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "Function",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 25000
+      }
+    },
+    "Route": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "Api"
+        },
+        "RouteKey": "$default",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "Integration"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "Stage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "Api"
+        },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "ThrottlingBurstLimit": 20,
+          "ThrottlingRateLimit": 10
+        }
+      }
+    },
+    "InvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "Function"
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${Api}/*"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ApiUrl": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Api",
+          "ApiEndpoint"
+        ]
+      }
+    },
+    "TableName": {
+      "Value": {
+        "Ref": "Attendees"
+      }
+    },
+    "FunctionName": {
+      "Value": {
+        "Ref": "Function"
+      }
+    }
+  }
+}

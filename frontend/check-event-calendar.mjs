@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { eventCalendar, googleCalendar } from './src/event-calendar.js';
+const event = { id: 'e'.repeat(32), name: 'Builders, Cup; \n BEGIN:VEVENT ' + '🙂'.repeat(30), venue: 'Ulwe, Navi Mumbai', description: 'First\nSecond\\Third', start: '2026-10-06T10:00:00+05:30', end: '2026-10-06T17:00:00+05:30' };
+const result = eventCalendar(event, 'https://eventflow-qr.vercel.app', Date.parse(event.start));
+assert.ok(result.includes('DTSTART:20261006T043000Z\r\nDTEND:20261006T113000Z'));
+assert.equal(result.match(/^BEGIN:VEVENT$/gm)?.length, 1);
+assert.ok(result.includes('Builders\\, Cup\\; \\n BEGIN:VEVENT'));
+assert.ok(result.split('\r\n').every(line => new TextEncoder().encode(line).length <= 75));
+assert.ok(result.endsWith('END:VCALENDAR\r\n'));
+const link = new URL(googleCalendar(event, 'https://eventflow-qr.vercel.app'));
+assert.equal(link.searchParams.get('text'), event.name);
+assert.equal(link.searchParams.get('ctz'), 'Asia/Kolkata');
+console.log('PASS: calendar UTC conversion, content escaping, UTF-8 line folding and Google Calendar encoding.');
