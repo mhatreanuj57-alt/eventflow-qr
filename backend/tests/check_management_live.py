@@ -61,12 +61,17 @@ try:
     draft = {'name': 'Fictional management QA ' + secrets.token_hex(4), 'host': 'Temporary QA only', 'venue': 'Fictional venue', 'description': '',
              'start': iso(now + timedelta(days=1)), 'end': iso(now + timedelta(days=1, hours=4)), 'registrationOpen': iso(now - timedelta(hours=1)),
              'registrationClose': iso(now + timedelta(hours=1)), 'color': '#ff5100', 'layout': 'editorial', 'mark': 'QA', 'logo': '', 'capacity': '1',
+             'cover': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=',
              'waitlist': True, 'visibility': 'unlisted', 'tickets': [{'id': 'review', 'name': 'Review ticket', 'capacity': '1', 'requireApproval': True}],
              'questions': [{'id': 'interest', 'label': 'What will you learn?', 'type': 'choice', 'required': True, 'choices': ['Python', 'React']}]}
     event = checked(request('/platform/organizer/events', draft, owner['token']), 201)
     scope['events'].append({'id': event['id'], 'name': event['name']}); save()
     path = '/platform/organizer/events/' + event['id']
     public = '/platform/events/' + event['id']
+    assert event['cover'].startswith('https://') and not event['logo']
+    event = checked(request(path, {**draft, 'cover': event['cover'], 'logo': draft['cover']}, owner['token']))
+    assert event['cover'].startswith('https://') and event['logo'].startswith('https://')
+    assert any(e['id'] == event['id'] for e in checked(request('/platform/organizer/events', token=owner['token']))['events'])
     person = {'name': 'Fictional guest', 'type': 'Other', 'ticketId': 'review', 'answers': {'interest': 'Python'}}
     def register(label, **extra): return request(public + '/registrations', {**person, 'email': label + '-' + event['id'] + '@example.test', **extra})
     checked(register('invalid', answers={}), 400)

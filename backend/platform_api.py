@@ -216,7 +216,6 @@ def public_event(h, event, owner=False):
     if result['status'] == 'open' and m.full(h, event, seats):
         result['status'] = 'full'
     if event.get('logoKey'):
-        import os
         result['logo'] = h.boto3.client('s3', region_name=h.REGION).generate_presigned_url('get_object', Params={'Bucket': os.environ['BRAND_BUCKET'], 'Key': event['logoKey']}, ExpiresIn=3600)
     if owner:
         result['owner'] = event['ownerEmail']

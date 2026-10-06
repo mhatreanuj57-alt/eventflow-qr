@@ -15,6 +15,13 @@ with patch('time.time', return_value=base.now), patch.object(m, 'kick_mail'):
              'tickets': [{'id': 'standard', 'name': 'General', 'capacity': 1}, {'id': 'curated', 'name': 'Curated', 'capacity': 1, 'requireApproval': True}],
              'questions': [{'id': 'interest', 'label': 'What interests you?', 'type': 'choice', 'required': True, 'choices': ['Code', 'Design']}]}
     event = p.get_event(h, p.save_event(h, draft, owner)['id'])
+    os.environ['BRAND_BUCKET'] = 'fictional-brand-bucket'
+    with patch.object(h.boto3, 'client') as client:
+        client.return_value.generate_presigned_url.return_value = 'https://example.test/private-brand'
+        for branding in ({'coverKey': 'cover.png'}, {'coverKey': 'cover.png', 'logoKey': 'logo.png'}):
+            result = p.public_event(h, {**event, **branding}, True)
+            assert result['cover'] == 'https://example.test/private-brand'
+            assert result['logo'] == ('https://example.test/private-brand' if branding.get('logoKey') else '')
     person = {**base.attendee, 'ticketId': 'standard', 'answers': {'interest': 'Code'}}
     base.rejected(lambda: m.register(h, event, {**person, 'answers': {}}, 'missing'), 400)
     base.rejected(lambda: m.register(h, event, {**person, 'answers': {'interest': 'Other'}}, 'choice'), 400)
